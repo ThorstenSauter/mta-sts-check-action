@@ -1,0 +1,5 @@
+rules:
+  # The `$/` self-repository syntax isn't supported by actionlint yet; revisit once it is.
+  self-repository:
+    ignore:
+      - ci.yml
