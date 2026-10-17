@@ -76,10 +76,37 @@ jobs:
           RESULT: ${{ steps.check.outputs.result }}
         run: echo "Result is $RESULT"
 
+  self-test-isolation:
+    name: Self-test (offline mode can't leak in)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    env:
+      # If this reached check.sh, it would read a passing fixture instead of querying example.com.
+      MTA_STS_OFFLINE_DIR: ${{ github.workspace }}/tests/fixtures/valid
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check a domain without MTA-STS
+        id: check
+        continue-on-error: true
+        uses: ./
+        with:
+          domain: example.com
+      - name: Expect a live failure
+        env:
+          RESULT: ${{ steps.check.outputs.result }}
+        run: |
+          echo "Result is $RESULT"
+          test "$RESULT" = fail
+
   checks-passed:
     name: CI passed
     runs-on: ubuntu-slim
-    needs: [ lint, test, self-test ]
+    needs: [ lint, test, self-test, self-test-isolation ]
     if: always()
     timeout-minutes: 5
     steps:

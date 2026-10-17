@@ -11,27 +11,58 @@
 #   MTA_STS_OFFLINE_DIR
 #                    Test mode: read DNS answers from <dir>/dns.txt (dig answer format) and the policy
 #                    from <dir>/policy.txt instead of querying the network. The certificate check is skipped.
+#                    action.yml always clears it, so it can't leak in from a workflow's environment.
 set -euo pipefail
 
 domain="${1:-${DOMAIN:-}}"
 domain="${domain%.}"
 domain="${domain,,}"
 resolver="${RESOLVER:-1.1.1.1}"
+resolver="${resolver,,}"
 min_cert_days="${MIN_CERT_DAYS:-14}"
 fail_on_warning="${FAIL_ON_WARNING:-false}"
 offline_dir="${MTA_STS_OFFLINE_DIR:-}"
+
+# Policies are a few hundred bytes. Anything bigger is refused, so a hostile server can't fill the disk or the report.
+max_policy_bytes=65536
+# Untrusted values (DNS records, policy lines, server responses) are shortened to this many characters in messages.
+max_value_length=200
+# At most this many policy errors are listed.
+max_errors=5
+
+hostname_re='^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+ipv4_re='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+ipv6_re='^[0-9a-f]*:[0-9a-f:.]*$'
 
 if [[ -z "$domain" ]]; then
   echo "Usage: $0 <domain>" >&2
   exit 2
 fi
-if [[ ! "$min_cert_days" =~ ^[0-9]+$ ]]; then
-  echo "MIN_CERT_DAYS must be a non-negative integer, got '$min_cert_days'." >&2
+if [[ ! "$domain" =~ $hostname_re ]] || ((${#domain} > 253)); then
+  echo "Invalid domain '${domain:0:$max_value_length}': expected a hostname like example.com." >&2
+  exit 2
+fi
+if [[ ! "$resolver" =~ $ipv4_re && ! "$resolver" =~ $ipv6_re && ! "$resolver" =~ $hostname_re ]]; then
+  echo "Invalid resolver '${resolver:0:$max_value_length}': expected an IP address or a hostname." >&2
+  exit 2
+fi
+if [[ ! "$min_cert_days" =~ ^[0-9]{1,5}$ ]]; then
+  echo "MIN_CERT_DAYS must be a non-negative integer, got '${min_cert_days:0:$max_value_length}'." >&2
   exit 2
 fi
 
 policy_host="mta-sts.${domain}"
 policy_url="https://${policy_host}/.well-known/mta-sts.txt"
+
+# Shortens an untrusted value for use in a message.
+clip() {
+  local value="$1"
+  if ((${#value} > max_value_length)); then
+    printf '%s…' "${value:0:$max_value_length}"
+  else
+    printf '%s' "$value"
+  fi
+}
 
 # Results as "STATUS|check|message" lines. STATUS is PASS, WARN, FAIL or SKIP.
 results=()
@@ -47,7 +78,8 @@ dns_answer() {
     awk -v name="${name,,}." 'tolower($1) == name' "$offline_dir/dns.txt"
     return
   fi
-  out=$(dig "@$resolver" "$name" "$type" +noall +answer +comments +time=5 +tries=2) || return 1
+  # -r ignores ~/.digrc. TCP makes spoofed answers harder than UDP does.
+  out=$(dig -r "@$resolver" "$name" "$type" +tcp +noall +answer +comments +time=5 +tries=2) || return 1
   status=$(grep -oE 'status: [A-Z]+' <<<"$out" | head -n 1 | cut -d ' ' -f 2)
   [[ "$status" == NOERROR || "$status" == NXDOMAIN ]] || return 1
   grep -v '^;' <<<"$out" || true
@@ -77,6 +109,16 @@ join_by() {
     out+="${out:+$separator}${item}"
   done
   printf '%s' "$out"
+}
+
+# Joins policy errors, listing at most $max_errors of them.
+join_errors() {
+  local count=$#
+  if ((count > max_errors)); then
+    printf '%s; and %d more' "$(join_by '; ' "${@:1:max_errors}")" $((count - max_errors))
+  else
+    join_by '; ' "$@"
+  fi
 }
 
 trim() {
@@ -116,11 +158,11 @@ else
     id=$(grep -oE '(^|;)[[:space:]]*id=[^;]*' <<<"$sts_records" | head -n 1 | sed -E 's/.*id=//')
     id=$(trim "$id")
     if [[ -z "$id" ]]; then
-      record FAIL "$check" "Record has no 'id' field: ${sts_records}"
+      record FAIL "$check" "Record has no 'id' field: $(clip "$sts_records")"
     elif [[ ! "$id" =~ ^[A-Za-z0-9]{1,32}$ ]]; then
-      record FAIL "$check" "Invalid id '${id}': it must be 1-32 alphanumeric characters."
+      record FAIL "$check" "Invalid id '$(clip "$id")': it must be 1-32 alphanumeric characters."
     else
-      record PASS "$check" "${sts_records}"
+      record PASS "$check" "$(clip "$sts_records")"
     fi
   fi
 fi
@@ -139,18 +181,18 @@ else
   else
     rua=$(grep -oE '(^|;)[[:space:]]*rua=[^;]*' <<<"$rpt_records" | head -n 1 | sed -E 's/.*rua=//')
     if [[ -z "$(trim "$rua")" ]]; then
-      record FAIL "$check" "Record has no 'rua' field: ${rpt_records}"
+      record FAIL "$check" "Record has no 'rua' field: $(clip "$rpt_records")"
     else
       invalid=()
       IFS=',' read -ra uris <<<"$rua"
       for uri in "${uris[@]}"; do
         uri=$(trim "$uri")
-        [[ "$uri" =~ ^(mailto:[^[:space:]]+@[^[:space:]]+|https://[^[:space:]]+)$ ]] || invalid+=("'${uri}'")
+        [[ "$uri" =~ ^(mailto:[^[:space:]]+@[^[:space:]]+|https://[^[:space:]]+)$ ]] || invalid+=("'$(clip "$uri")'")
       done
       if ((${#invalid[@]} > 0)); then
-        record FAIL "$check" "Invalid rua URI(s) ${invalid[*]}: only mailto: and https: are allowed."
+        record FAIL "$check" "Invalid rua URI(s) $(clip "${invalid[*]}"): only mailto: and https: are allowed."
       else
-        record PASS "$check" "${rpt_records}"
+        record PASS "$check" "$(clip "$rpt_records")"
       fi
     fi
   fi
@@ -170,7 +212,7 @@ elif [[ -z "$addresses" ]]; then
   record FAIL "$check" "${policy_host} has no A or AAAA record."
 else
   host_ok=true
-  record PASS "$check" "${policy_host} resolves to $(paste -sd ' ' <<<"$addresses")."
+  record PASS "$check" "${policy_host} resolves to $(clip "$(paste -sd ' ' <<<"$addresses")")."
 fi
 
 # 4. Policy file over HTTPS
@@ -179,28 +221,40 @@ policy=""
 policy_ok=false
 body_file=$(mktemp)
 trap 'rm -f "$body_file"' EXIT
+fetched=false
 if [[ -n "$offline_dir" ]]; then
   cp "$offline_dir/policy.txt" "$body_file"
-  policy_ok=true
-  record PASS "$check" "Read from ${offline_dir}/policy.txt (offline mode)."
+  fetched=true
+  fetch_message="Read from ${offline_dir}/policy.txt (offline mode)."
 elif [[ "$host_ok" != true ]]; then
   record SKIP "$check" "Skipped because ${policy_host} does not resolve."
 else
-  # Redirects are not followed on purpose: RFC 8461 section 3.3 forbids them.
-  if ! response=$(curl --silent --show-error --max-time 20 --proto '=https' --tlsv1.2 \
-    --output "$body_file" --write-out '%{http_code}\n%{content_type}' "$policy_url" 2>&1); then
-    record FAIL "$check" "Fetching ${policy_url} failed: $(tail -n 1 <<<"$response")"
+  # -q ignores ~/.curlrc. Redirects are not followed on purpose: RFC 8461 section 3.3 forbids them.
+  if ! response=$(curl -q --silent --show-error --max-time 20 --max-filesize "$max_policy_bytes" \
+    --proto '=https' --tlsv1.2 --output "$body_file" --write-out '%{http_code}\n%{content_type}' \
+    "$policy_url" 2>&1); then
+    record FAIL "$check" "Fetching ${policy_url} failed: $(clip "$(tail -n 1 <<<"$response")")"
   else
     http_code=$(head -n 1 <<<"$response")
     content_type=$(sed -n 2p <<<"$response")
     if [[ "$http_code" != 200 ]]; then
-      record FAIL "$check" "${policy_url} returned HTTP ${http_code}; it must be 200 without redirects."
+      record FAIL "$check" "${policy_url} returned HTTP $(clip "$http_code"); it must be 200 without redirects."
     elif [[ ! "${content_type,,}" =~ ^text/plain([[:space:]]*;|$) ]]; then
-      record FAIL "$check" "${policy_url} is served as '${content_type}'; it must be text/plain."
+      record FAIL "$check" "${policy_url} is served as '$(clip "$content_type")'; it must be text/plain."
     else
-      policy_ok=true
-      record PASS "$check" "${policy_url} returned HTTP 200 (${content_type})."
+      fetched=true
+      fetch_message="${policy_url} returned HTTP 200 ($(clip "$content_type"))."
     fi
+  fi
+fi
+if [[ "$fetched" == true ]]; then
+  # --max-filesize can't stop a server that doesn't send Content-Length, so check the size again.
+  size=$(wc -c <"$body_file")
+  if ((size > max_policy_bytes)); then
+    record FAIL "$check" "The policy is larger than ${max_policy_bytes} bytes; it was not parsed."
+  else
+    policy_ok=true
+    record PASS "$check" "$fetch_message"
   fi
 fi
 
@@ -244,7 +298,7 @@ else
   while IFS= read -r line; do
     [[ -z "$(trim "$line")" ]] && continue
     if [[ ! "$line" =~ ^([A-Za-z0-9_-]+)[[:space:]]*:[[:space:]]*(.*)$ ]]; then
-      errors+=("invalid line '${line}'")
+      errors+=("invalid line '$(clip "$line")'")
       continue
     fi
     key="${BASH_REMATCH[1]}"
@@ -261,33 +315,33 @@ else
         if [[ "$value" =~ ^(\*\.)?[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+\.?$ ]]; then
           mx_patterns+=("$value")
         else
-          errors+=("invalid mx '${value}'")
+          errors+=("invalid mx '$(clip "$value")'")
         fi
         ;;
     esac
   done <<<"$policy"
 
-  [[ "$version" == STSv1 ]] || errors+=("version must be 'STSv1', got '${version}'")
+  [[ "$version" == STSv1 ]] || errors+=("version must be 'STSv1', got '$(clip "$version")'")
   case "$mode" in
     enforce) ;;
     testing) warnings+=("mode is 'testing', so senders don't enforce the policy yet") ;;
     none) warnings+=("mode is 'none', so the policy is disabled") ;;
-    *) errors+=("mode must be enforce, testing or none, got '${mode}'") ;;
+    *) errors+=("mode must be enforce, testing or none, got '$(clip "$mode")'") ;;
   esac
   if [[ "$mode" =~ ^(enforce|testing)$ ]] && ((${#mx_patterns[@]} == 0)); then
     errors+=("no mx entries, but mode '${mode}' requires at least one")
   fi
   if [[ ! "$max_age" =~ ^[0-9]{1,10}$ ]]; then
-    errors+=("max_age must be a non-negative integer, got '${max_age}'")
+    errors+=("max_age must be a non-negative integer, got '$(clip "$max_age")'")
   elif ((10#$max_age > 31557600)); then
     errors+=("max_age ${max_age} exceeds the maximum of 31557600 seconds (1 year)")
   elif ((10#$max_age < 86400)); then
     warnings+=("max_age ${max_age} is shorter than a day, which gives little protection")
   fi
 
-  summary="version=${version}, mode=${mode}, max_age=${max_age}, mx=$(join_by ', ' "${mx_patterns[@]}")"
+  summary="version=$(clip "$version"), mode=$(clip "$mode"), max_age=$(clip "$max_age"), mx=$(clip "$(join_by ', ' "${mx_patterns[@]}")")"
   if ((${#errors[@]} > 0)); then
-    record FAIL "$check" "$(join_by '; ' "${errors[@]}"). Policy: ${summary}"
+    record FAIL "$check" "$(join_errors "${errors[@]}"). Policy: ${summary}"
   elif ((${#warnings[@]} > 0)); then
     record WARN "$check" "$(join_by '; ' "${warnings[@]}"). Policy: ${summary}"
   else
@@ -320,9 +374,9 @@ else
       [[ "$matched" == true ]] || unmatched+=("$mx")
     done <<<"$mx_hosts"
     if ((${#unmatched[@]} == 0)); then
-      record PASS "$check" "All MX hosts are covered: $(paste -sd ' ' <<<"$mx_hosts")."
+      record PASS "$check" "All MX hosts are covered: $(clip "$(paste -sd ' ' <<<"$mx_hosts")")."
     else
-      message="MX host(s) not covered by the policy: ${unmatched[*]}."
+      message="MX host(s) not covered by the policy: $(clip "${unmatched[*]}")."
       if [[ "$mode" == enforce ]]; then
         record FAIL "$check" "${message} Senders will refuse to deliver to them."
       else
@@ -346,7 +400,10 @@ report="### MTA-STS check for \`${domain}\`: ${result^^}"$'\n\n'
 report+="| | Check | Details |"$'\n'"|---|---|---|"$'\n'
 for r in "${results[@]}"; do
   IFS='|' read -r status name message <<<"$r"
-  report+="| ${icons[$status]} | ${name} | ${message//|/\\|} |"$'\n'
+  # Messages contain values from DNS and the policy host. A code span keeps them from rendering as mentions, links
+  # or HTML in the job summary and in issues. Backticks would end the span, and pipes would end the table cell.
+  message="${message//\`/\'}"
+  report+="| ${icons[$status]} | ${name} | \`${message//|/\\|}\` |"$'\n'
 done
 
 echo

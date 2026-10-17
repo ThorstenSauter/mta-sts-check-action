@@ -1,0 +1,12 @@
+version: STSv1
+mode: enforce
+mx: mx1.mail.example.net
+max_age: 604800
+junk line 1
+junk line 2
+junk line 3
+junk line 4
+junk line 5
+junk line 6
+junk line 7
+junk line 8

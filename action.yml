@@ -48,4 +48,6 @@ runs:
         RESOLVER: ${{ inputs.resolver }}
         MIN_CERT_DAYS: ${{ inputs.min-cert-days }}
         FAIL_ON_WARNING: ${{ inputs.fail-on-warning }}
+        # Test mode is only for tests/run.sh. Clear it so a value in the job's environment can't switch it on.
+        MTA_STS_OFFLINE_DIR: ''
       run: '"$GITHUB_ACTION_PATH/check.sh" "$DOMAIN"'
