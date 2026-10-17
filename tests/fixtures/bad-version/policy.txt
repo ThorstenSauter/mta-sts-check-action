@@ -1,0 +1,4 @@
+version: STSv2
+mode: enforce
+mx: mx1.mail.example.net
+max_age: 604800

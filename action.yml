@@ -1,0 +1,51 @@
+name: 'MTA-STS check'
+description: >-
+  Validates the MTA-STS (RFC 8461) and TLS-RPT (RFC 8460) configuration of a domain from the outside: the DNS
+  records, the policy file and its certificate, and whether the domain's MX hosts are covered by the policy.
+author: 'Thorsten Sauter'
+branding:
+  icon: 'shield'
+  color: 'green'
+inputs:
+  domain:
+    description: 'The mail domain to check, e.g. example.com.'
+    required: true
+  resolver:
+    description: 'The DNS server that all lookups are sent to. Defaults to Cloudflare (1.1.1.1).'
+    required: false
+    default: '1.1.1.1'
+  min-cert-days:
+    description: 'Warn when the certificate of the policy host expires within this many days. Defaults to 14.'
+    required: false
+    default: '14'
+  fail-on-warning:
+    description: 'Fail the step on warnings as well as on errors. Defaults to false.'
+    required: false
+    default: 'false'
+outputs:
+  result:
+    description: 'The overall result: pass, warn or fail.'
+    value: ${{ steps.check.outputs.result }}
+  report:
+    description: 'The results of all checks as a Markdown table.'
+    value: ${{ steps.check.outputs.report }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install dig
+      shell: bash
+      run: |
+        if ! command -v dig >/dev/null; then
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bind9-dnsutils
+        fi
+    - name: Check MTA-STS configuration
+      id: check
+      shell: bash
+      env:
+        DOMAIN: ${{ inputs.domain }}
+        RESOLVER: ${{ inputs.resolver }}
+        MIN_CERT_DAYS: ${{ inputs.min-cert-days }}
+        FAIL_ON_WARNING: ${{ inputs.fail-on-warning }}
+      run: '"$GITHUB_ACTION_PATH/check.sh" "$DOMAIN"'

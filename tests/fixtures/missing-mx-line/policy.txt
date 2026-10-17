@@ -1,0 +1,3 @@
+version: STSv1
+mode: enforce
+max_age: 604800
