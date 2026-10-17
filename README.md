@@ -53,25 +53,26 @@ on:
     - cron: '0 6 * * 1' # Mondays 06:00 UTC
   workflow_dispatch:
 
-permissions:
-  contents: read
-  issues: write
+permissions: {}
 
 jobs:
   check:
     name: Validate MTA-STS configuration
     runs-on: ubuntu-latest
+    permissions:
+      issues: write # Opens, comments on and closes the tracking issue
+    timeout-minutes: 10
     env:
       MTA_STS_DOMAIN: example.com
     steps:
       - name: Validate MTA-STS configuration
         id: check
-        uses: ThorstenSauter/mta-sts-check-action@v1
+        uses: ThorstenSauter/mta-sts-check-action@f3cb719e3193f2c68ba5c902c538996e86d6d1f4 # v1.0.0
         with:
           domain: ${{ env.MTA_STS_DOMAIN }}
       - name: Open, update or close the tracking issue
         if: always()
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           OUTCOME: ${{ steps.check.outcome }}
           REPORT: ${{ steps.check.outputs.report }}
@@ -112,6 +113,9 @@ jobs:
               });
             }
 ```
+
+Pin actions to a full commit SHA as shown, with the version as a comment, so tools like Renovate can update them.
+The moving `v1` tag always points at the latest `v1.x.y` release.
 
 GitHub disables scheduled workflows in repositories that have had no activity for 60 days. Regular dependency
 updates, for example from Renovate, keep the repository active.
