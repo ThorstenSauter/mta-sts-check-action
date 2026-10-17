@@ -1,0 +1,1 @@
+| ✅ | _mta-sts TXT record | `v=STSv1; id=abc; ext=@octocat [x](https://evil.example) <!-- 'tick' \|pipe;` |

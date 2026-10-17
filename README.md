@@ -22,6 +22,9 @@ deliver mail.
 
 The results are written to the job summary and to the `report` output as a Markdown table.
 
+All DNS lookups go over TCP to the configured resolver. Responses aren't DNSSEC-validated, so treat the result as
+monitoring, not as proof.
+
 ## Inputs
 
 | Name | Description | Default |
@@ -38,7 +41,28 @@ The results are written to the job summary and to the `report` output as a Markd
 | `result` | `pass`, `warn` or `fail` |
 | `report` | The results of all checks as a Markdown table. |
 
-The action runs on Linux runners. It uses `dig`, `curl` and `openssl`, and installs `dig` if it is missing.
+The action runs on Linux runners. It uses `dig`, `curl` and `openssl`. If `dig` is missing, it installs
+`bind9-dnsutils` with `sudo apt-get`. On a self-hosted runner, that changes the machine, so install `dig` beforehand
+if you don't want that.
+
+## Security
+
+The action reads data that whoever controls the checked domain's DNS or policy host can choose. It treats that data as
+untrusted:
+
+- `domain` must be a valid hostname, and `resolver` must be an IP address or a hostname. Anything else stops the action
+  before it makes any network request.
+- Policy files larger than 64 KiB are refused.
+- Values from DNS and the policy are shortened in messages, and at most five policy errors are listed. In the job
+  summary and the `report` output they appear in code spans, so they can't render as mentions, links or HTML when you
+  post the report to an issue.
+- `dig` and `curl` ignore `~/.digrc` and `~/.curlrc`. Redirects aren't followed, and only HTTPS with TLS 1.2 or newer
+  is accepted.
+
+Pass the `report` output to scripts through `env:`, as in the example below, never by interpolating
+`${{ steps.check.outputs.report }}` into a `run:` script.
+
+Report vulnerabilities privately through the repository's Security tab (see [SECURITY.md](SECURITY.md)).
 
 ## Example: weekly check with a tracking issue
 
@@ -135,5 +159,7 @@ bash tests/run.sh
 ```
 
 `tests/run.sh` runs `check.sh` in offline mode against each directory in `tests/fixtures/`. A fixture has a `dns.txt`
-with DNS answers in `dig` answer format, a `policy.txt`, and an `expected` file with the expected result (`pass`, `warn`
-or `fail`). In offline mode the certificate check is skipped.
+with DNS answers in `dig` answer format, a `policy.txt`, and an `expected` file with the expected result (`pass`,
+`warn`, `fail`, or `error` for input that must be rejected). Optional files: `domain` and `resolver` override the
+inputs, and `expected-output` lists lines that must appear in the console output or the report. In offline mode the
+certificate check is skipped. The action itself always turns offline mode off.
