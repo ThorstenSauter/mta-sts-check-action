@@ -62,7 +62,7 @@ untrusted:
 Pass the `report` output to scripts through `env:`, as in the example below, never by interpolating
 `${{ steps.check.outputs.report }}` into a `run:` script.
 
-Report vulnerabilities privately through the repository's Security tab (see [SECURITY.md](SECURITY.md)).
+Report vulnerabilities privately through the repository's Security tab (see the [security policy](https://github.com/ThorstenSauter/mta-sts-check-action/security/policy)).
 
 ## Example: weekly check with a tracking issue
 
