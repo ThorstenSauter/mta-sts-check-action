@@ -1,0 +1,6 @@
+self-hosted-runner:
+  # GitHub-hosted labels that actionlint 1.7.12 doesn't know yet. Remove this file once Renovate brings in an
+  # actionlint release that does.
+  labels:
+    - ubuntu-26.04
+    - ubuntu-26.04-arm
