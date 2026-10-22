@@ -11,7 +11,7 @@ jobs:
   update-major-tag:
     name: Update major version tag
     if: ${{ !github.event.release.prerelease }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04-arm
     permissions:
       contents: write
     timeout-minutes: 5
