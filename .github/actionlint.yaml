@@ -4,3 +4,9 @@ self-hosted-runner:
   labels:
     - ubuntu-26.04
     - ubuntu-26.04-arm
+paths:
+  .github/workflows/ci.yml:
+    ignore:
+      # CI runs this repository's own actions with the same-repository `$/` syntax, so the lockfile covers the
+      # actions they use. actionlint doesn't know it yet (rhysd/actionlint#711); remove this once it does.
+      - 'specifying action "\$/'

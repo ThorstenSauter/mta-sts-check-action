@@ -138,7 +138,9 @@ jobs:
             }
 ```
 
-Pin actions to a full commit SHA as shown, with the version as a comment, so tools like Renovate can update them.
+Pin actions to a full commit SHA as shown, with the version as a comment, or reference the full version tag and lock
+it in a [workflow lockfile](https://docs.github.com/en/actions/concepts/security/workflow-dependency-lockfiles)
+(`gh actions-lock`). Either way, tools like Renovate can update them.
 The moving `v1` tag always points at the latest `v1.x.y` release.
 
 GitHub disables scheduled workflows in repositories that have had no activity for 60 days. Regular dependency

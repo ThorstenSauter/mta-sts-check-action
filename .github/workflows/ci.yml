@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Run ShellCheck
@@ -31,7 +31,7 @@ jobs:
         with:
           args: -color
       - name: Run zizmor
-        uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        uses: zizmorcore/zizmor-action@v0.8.1
         with:
           advanced-security: false
 
@@ -43,7 +43,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Run fixture tests
@@ -63,12 +63,12 @@ jobs:
           - gmail.com
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Check MTA-STS configuration
         id: check
-        uses: ./
+        uses: $/
         with:
           domain: ${{ matrix.domain }}
       - name: Show result
@@ -87,13 +87,13 @@ jobs:
       MTA_STS_OFFLINE_DIR: ${{ github.workspace }}/tests/fixtures/valid
     steps:
       - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - name: Check a domain without MTA-STS
         id: check
         continue-on-error: true
-        uses: ./
+        uses: $/
         with:
           domain: example.com
       - name: Expect a live failure

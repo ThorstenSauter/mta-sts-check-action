@@ -44,6 +44,6 @@ Everything from DNS, the policy host and curl is attacker-controlled (whoever co
 
 - Add a fixture under `tests/fixtures/<case>/` (`dns.txt`, `policy.txt`, `expected`, plus optional `domain`, `resolver` and `expected-output`) for every new check or failure path.
 - `tests/fixtures/crlf-bom/policy.txt` must keep its CRLF line endings and BOM (see `.gitattributes`).
-- Actions are pinned by commit SHA with a version comment (the repo enforces SHA pinning) and updated by Renovate. Workflows set `permissions: {}` at the top level, give each job only the permissions it needs, and set `timeout-minutes` and `persist-credentials: false`.
+- Actions are referenced by full version tag, in workflows and in `action.yml` alike. `.github/workflows/actions.lock` locks the commits (CI runs this repo's action as `$/`, so the lockfile covers the actions it uses), and Renovate updates the tags and regenerates the lockfile; after changing a `uses:` line by hand, run `gh actions-lock --migrate-local-actions`. Workflows set `permissions: {}` at the top level, give each job only the permissions it needs, and set `timeout-minutes` and `persist-credentials: false`.
 - Commit messages follow Conventional Commits. `main` only accepts signed, squash-merged PRs.
 - `.editorconfig`: LF line endings, 2-space indent, UTF-8.
