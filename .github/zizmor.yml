@@ -1,5 +1,8 @@
 rules:
-  # The `$/` self-repository syntax isn't supported by actionlint yet; revisit once it is.
-  self-repository:
-    ignore:
-      - ci.yml
+  # Workflows reference actions by version tag and .github/workflows/actions.lock locks the commits, which zizmor
+  # honours. action.yml uses version tags too, which no lockfile covers in this repository: consumers lock them in
+  # their own workflow lockfiles.
+  unpinned-uses:
+    config:
+      policies:
+        "*": ref-pin
